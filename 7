@@ -20,7 +20,7 @@ impl Player {
             x: 2_f64,
             y: 2_f64,
             fov: 3.14159_f64 / 4.0_f64,
-            depth: 16.0_f64,
+            depth: 5.0_f64,
             speed: 5.0_f64,
         }
     }
@@ -60,7 +60,7 @@ impl Map {
 }
 
 fn game_logic(game: &mut engine::Engine) -> Result<(), String> {
-    // #![allow(unused_assignments)]
+    #![allow(unused_assignments)]
     // DECLARE YOUR VARIABLE HERE
     let wall = engine::Sprite::load_from_file(&std::path::Path::new("brick.png"))?;
     let mut player = Player::new();
@@ -129,7 +129,9 @@ fn game_logic(game: &mut engine::Engine) -> Result<(), String> {
             let mut hit_wall = false;
             let eye_x = (&ray_angle).sin();
             let eye_y = (&ray_angle).cos();
-            let mut sample_x = -0.1_f64;
+            let mut sample_x = -1.0_f64;
+            let mut boundry_vec: Vec<(f64, f64)> = Vec::new();
+            boundry_vec.clear();
             while !hit_wall && wall_distance < player.depth {
                 wall_distance += stepsize;
 
@@ -140,7 +142,7 @@ fn game_logic(game: &mut engine::Engine) -> Result<(), String> {
                 if test_x < 0 || test_x >= map.w || test_y < 0 || test_y >= map.h {
                     hit_wall = true;
                     wall_distance = player.depth;
-                    sample_x = -1.0;
+                    sample_x = 0.0;
                 } else {
                     if map.get_2d(test_x, test_y) == Some('#') {
                         hit_wall = true;
@@ -156,9 +158,11 @@ fn game_logic(game: &mut engine::Engine) -> Result<(), String> {
                             (test_point_y as f64 - mid_y).atan2(test_point_x as f64 - mid_x);
 
                         if test_angle >= -PI * 0.25_f64 && test_angle < PI * 0.25_f64 {
-                            sample_x = test_point_y - (test_y as f64);
+                            println!("woups");
+                            sample_x = -1.0_f64 // test_point_y - (test_y as f64);
                         } else if test_angle >= PI * 0.25_f64 && test_angle < PI * 0.75_f64 {
-                            sample_x = test_point_x - (test_x as f64);
+                            println!("woupsi2");
+                            sample_x = -4.0_f64 //test_point_x - (test_x as f64);
                         } else if test_angle < -PI * 0.25_f64 && test_angle >= -PI * 0.75_f64 {
                             sample_x = test_point_x - (test_x as f64);
                         } else if test_angle >= PI * 0.75_f64 || test_angle < -PI * 0.75_f64 {
@@ -248,9 +252,8 @@ fn game_logic(game: &mut engine::Engine) -> Result<(), String> {
 }
 
 fn main() -> Result<(), String> {
-    let fac = 2;
     let mut game: engine::Engine<'static> =
-        engine::Engine::new("Pixel FPS", (120 * fac, 60 * fac, 10 / fac), &game_logic)
+        engine::Engine::new("Pixel FPS", (300, 220, 2), &game_logic)
             .map_err(|err| err.to_string())?;
     game.start()?;
     Ok(())
