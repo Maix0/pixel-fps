@@ -2,149 +2,8 @@ extern crate pixel_engine as engine;
 extern crate ron;
 extern crate serde;
 use engine::Keycode;
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Clone)]
-struct Sprite(engine::Sprite);
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-struct World {
-    map: Map,
-    objs: Vec<Objects>,
-    tiles: std::collections::HashMap<char, Tile>,
-}
-#[derive(Serialize, Deserialize, Debug, Clone)]
-struct Map {
-    map: String,
-    w: u64,
-    h: u64,
-}
-#[derive(Serialize, Deserialize, Debug, Clone)]
-struct Objects {
-    #[serde(skip)]
-    sprite: Option<Sprite>,
-    sprite_path: String,
-    x: f64,
-    y: f64,
-}
-#[derive(Serialize, Deserialize, Debug, Clone)]
-struct Tile {
-    #[serde(skip)]
-    sprite: Option<Sprite>,
-    sprite_path: String,
-    chr: char,
-}
-impl Tile {
-    fn load(&mut self) -> Result<(), String> {
-        self.sprite = Some(Sprite {
-            0: engine::Sprite::load_from_file(std::path::Path::new(&self.sprite_path))?,
-        });
-        Ok(())
-    }
-}
-
-struct WorldConstructor {
-    map: Vec<String>,
-    objects: Vec<Objects>,
-    tiles: std::collections::HashMap<char, Tile>,
-}
-impl WorldConstructor {
-    fn new() -> WorldConstructor {
-        WorldConstructor {
-            map: Vec::new(),
-            objects: Vec::new(),
-            tiles: std::collections::HashMap::new(),
-        }
-    }
-    fn load_file(path: String) -> Result<WorldConstructor, String> {
-        use std::io::prelude::*;
-        if std::path::Path::new(&path).exists() {
-            let mut file = std::fs::File::open(path).map_err(|e| e.to_string())?;
-            let mut data = String::new();
-            file.read_to_string(&mut data).map_err(|e| e.to_string())?;
-            let world = ron::de::from_str::<'_, World>(&data).map_err(|e| e.to_string())?;
-            Ok(WorldConstructor::from_world(world))
-        } else {
-            Ok(WorldConstructor::new())
-        }
-    }
-    fn from_world(world: World) -> WorldConstructor {
-        //let mut temp_map = world.map.split();
-        let mut cmap: Vec<String> = Vec::new();
-        for chr in world.map.map.split("") {
-            if cmap.len() > 0 {
-                let last_index = cmap.len() - 1;
-                if cmap[last_index].len() < world.map.w as usize {
-                    cmap[last_index].push_str(chr)
-                } else {
-                    cmap.push(chr.to_owned())
-                }
-            } else {
-                cmap.push(chr.to_owned());
-            }
-        }
-        cmap.pop();
-        WorldConstructor {
-            map: cmap,
-            tiles: world.tiles,
-            objects: world.objs,
-        }
-    }
-    fn to_world(&mut self) -> World {
-        let mut w = 0;
-        let h = self.map.len();
-        let mut map: Vec<String> = self.map.clone();
-        for r in &map {
-            if r.len() > w {
-                w = r.len();
-            }
-        }
-        let mut index = 0;
-        for row in &self.map {
-            if index > h {
-                break;
-            }
-            let mut r = row.clone();
-            if r.len() < w {
-                while r.len() < w {
-                    r.push('.');
-                }
-            }
-            map[index] = r.to_owned();
-            index += 1;
-        }
-        World {
-            map: Map {
-                map: map.join(""), /* STRING */
-                w: w as u64,       /* u64 */
-                h: h as u64,       /* u64 */
-            },
-            tiles: self.tiles.clone(),
-            objs: self.objects.clone(),
-        }
-    }
-    fn map_set_y(&mut self, len: usize) {
-        if len > self.map.len() {
-            while len > self.map.len() {
-                self.map.push(String::new());
-            }
-        }
-    }
-    fn map_set_x(&mut self, len: usize) {
-        for row in &mut self.map {
-            if len > row.len() {
-                while len >= row.len() {
-                    row.push_str(".");
-                }
-            }
-        }
-    }
-    fn map_set(&mut self, x: usize, y: usize, chr: char) {
-        self.map[y] = change_char(self.map[y].clone(), chr, x);
-    }
-}
-
-fn sprite_frame(game: &mut engine::Engine, spr: &Option<Sprite>) -> Result<(), String> {
+mod maps;
+fn sprite_frame(game: &mut engine::Engine, spr: &Option<engine::Sprite>) -> Result<(), String> {
     //return Ok(());
 
     if let Some(spr) = spr {
@@ -153,7 +12,7 @@ fn sprite_frame(game: &mut engine::Engine, spr: &Option<Sprite>) -> Result<(), S
                 game.screen.draw(
                     x + 5,
                     y + 305,
-                    spr.0.get_sample(x as f64 / 256_f64, y as f64 / 256_f64),
+                    spr.get_sample(x as f64 / 256_f64, y as f64 / 256_f64),
                 )?
             }
         }
@@ -169,9 +28,9 @@ fn sprite_frame(game: &mut engine::Engine, spr: &Option<Sprite>) -> Result<(), S
 fn game_logic(game: &mut engine::Engine) -> Result<(), String> {
     let args: Vec<_> = std::env::args().collect();
     //let mut c_world = WorldConstructor::new();
-    let mut c_world: WorldConstructor;
+    let mut c_world: maps::WorldConstructor;
     if args.len() > 1 {
-        c_world = WorldConstructor::load_file(args[1].clone()).map_err(|e| e.to_string())?;
+        c_world = maps::WorldConstructor::load_file(args[1].clone()).map_err(|e| e.to_string())?;
     } else {
         panic!("Filename required");
     }
@@ -188,10 +47,10 @@ fn game_logic(game: &mut engine::Engine) -> Result<(), String> {
     for tile in &mut c_world.tiles {
         tile.1.load()?;
     }
-    let mut selected_tile: Option<&Tile> = None;
+    let mut selected_tile: Option<&maps::Tile> = None;
     let mut selected_tile_index = 0;
 
-    let mut add_tile_t: Tile = Tile {
+    let mut add_tile_t: maps::Tile = maps::Tile {
         sprite: None,
         sprite_path: String::new(),
         chr: '\u{0000}',
@@ -429,7 +288,7 @@ fn game_logic(game: &mut engine::Engine) -> Result<(), String> {
             //add_tile = true;
             typing = true;
             add_tile_field = 0;
-            add_tile_t = Tile {
+            add_tile_t = maps::Tile {
                 sprite: None,
                 sprite_path: String::new(),
                 chr: '\u{0000}',
@@ -581,20 +440,6 @@ fn copy_string(source: String) -> String {
     let mut res = String::new();
     for chr in source.chars() {
         res.push((chr).clone());
-    }
-    res
-}
-
-fn change_char(source: String, chr: char, index: usize) -> String {
-    let mut res = String::new();
-    let mut c_index = 0_usize;
-    for c in source.chars() {
-        if c_index == index {
-            res.push(chr);
-        } else {
-            res.push(c);
-        }
-        c_index += 1;
     }
     res
 }
