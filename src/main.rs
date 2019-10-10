@@ -1,7 +1,8 @@
 extern crate pixel_engine as engine;
 use engine::sdl2::keyboard::Keycode;
 use std::f64::consts::PI;
-use std::io::BufRead;
+//use std::io::BufRead;
+mod maps;
 struct Player {
     angle: f64,
     x: f64,
@@ -11,7 +12,7 @@ struct Player {
     depth: f64,
 }
 
-const MMF: i32 = 2; // Minimap factor
+const MMF: i32 = 4; // Minimap factor
 
 impl Player {
     fn new() -> Player {
@@ -26,46 +27,14 @@ impl Player {
     }
 }
 
-struct Map {
-    map: String,
-    w: i64,
-    h: i64,
-}
-
-impl Map {
-    fn get_2d(&self, x: i64, y: i64) -> Option<char> {
-        self.map.chars().nth((y * self.w + x) as usize)
-    }
-    fn load_from_file(file_path: &std::path::Path) -> Result<Map, String> {
-        let mut map = Map {
-            w: 0,
-            h: 0,
-            map: String::from(""),
-        };
-        let file = std::fs::File::open(file_path).map_err(|err| err.to_string())?;
-        let reader = std::io::BufReader::new(file);
-        for (index, line) in reader.lines().enumerate() {
-            let line = line.map_err(|err| err.to_string())?; // Ignore errors.
-            map.h = index as i64 + 1;
-            if index == 0 {
-                map.w = line.len() as i64;
-            }
-            if map.w != line.len() as i64 {
-                return Err(String::from("map not with same width!"));
-            }
-            map.map.push_str(&line)
-        }
-        Ok(map)
-    }
-}
-
 fn game_logic(game: &mut engine::Engine) -> Result<(), String> {
     // #![allow(unused_assignments)]
     // DECLARE YOUR VARIABLE HERE
     let wall = engine::Sprite::load_from_file(&std::path::Path::new("brick.png"))?;
     let mut player = Player::new();
-    let map = Map::load_from_file(&std::path::Path::new("maps/dev.map"))?;
-
+    let mut map = maps::WorldConstructor::load_file(String::from("maps/dev.map"))?.to_world();
+    map.load_all()?;
+    let mut current_tile: char = '#';
     // END OF DECLARATION
     'running: loop {
         game.screen.clear(engine::Color::BLACK);
@@ -85,7 +54,7 @@ fn game_logic(game: &mut engine::Engine) -> Result<(), String> {
             // MOVE FORWARD
             player.x += player.angle.sin() * player.speed * game.elapsed;
             player.y += player.angle.cos() * player.speed * game.elapsed;
-            if map.get_2d(player.x as i64, player.y as i64) == Some('#') {
+            if map.get_2d(player.x as i64, player.y as i64) != Some('.') {
                 player.x -= player.angle.sin() * player.speed * game.elapsed;
                 player.y -= player.angle.cos() * player.speed * game.elapsed;
             }
@@ -94,7 +63,7 @@ fn game_logic(game: &mut engine::Engine) -> Result<(), String> {
             // MOCE BACKWARD
             player.x -= player.angle.sin() * player.speed * game.elapsed;
             player.y -= player.angle.cos() * player.speed * game.elapsed;
-            if map.get_2d(player.x as i64, player.y as i64) == Some('#') {
+            if map.get_2d(player.x as i64, player.y as i64) != Some('.') {
                 player.x += player.angle.sin() * player.speed * game.elapsed;
                 player.y += player.angle.cos() * player.speed * game.elapsed;
             }
@@ -103,7 +72,7 @@ fn game_logic(game: &mut engine::Engine) -> Result<(), String> {
             // MOVE LEFT
             player.x -= player.angle.cos() * player.speed * game.elapsed;
             player.y += player.angle.sin() * player.speed * game.elapsed;
-            if map.get_2d(player.x as i64, player.y as i64) == Some('#') {
+            if map.get_2d(player.x as i64, player.y as i64) != Some('.') {
                 player.x += player.angle.cos() * player.speed * game.elapsed;
                 player.y -= player.angle.sin() * player.speed * game.elapsed;
             }
@@ -112,7 +81,7 @@ fn game_logic(game: &mut engine::Engine) -> Result<(), String> {
             // MOVE RIGHT
             player.x += player.angle.cos() * player.speed * game.elapsed;
             player.y -= player.angle.sin() * player.speed * game.elapsed;
-            if map.get_2d(player.x as i64, player.y as i64) == Some('#') {
+            if map.get_2d(player.x as i64, player.y as i64) != Some('.') {
                 player.x -= player.angle.cos() * player.speed * game.elapsed;
                 player.y += player.angle.sin() * player.speed * game.elapsed;
             }
@@ -137,14 +106,18 @@ fn game_logic(game: &mut engine::Engine) -> Result<(), String> {
                 let test_x = (player.x + eye_x * wall_distance).floor() as i64;
                 let test_y = (player.y + eye_y * wall_distance).floor() as i64;
 
-                if test_x < 0 || test_x >= map.w || test_y < 0 || test_y >= map.h {
+                if test_x < 0
+                    || test_x >= map.map.w as i64
+                    || test_y < 0
+                    || test_y >= map.map.h as i64
+                {
                     hit_wall = true;
                     wall_distance = player.depth;
                     sample_x = -1.0;
                 } else {
-                    if map.get_2d(test_x, test_y) == Some('#') {
+                    if map.get_2d(test_x, test_y) != Some('.') {
                         hit_wall = true;
-
+                        current_tile = map.get_2d(test_x, test_y).unwrap();
                         // MIDDLE OF WALL AS f64
                         let mid_x = test_x as f64 + 0.5_f64;
                         let mid_y = test_y as f64 + 0.5_f64;
@@ -183,8 +156,15 @@ fn game_logic(game: &mut engine::Engine) -> Result<(), String> {
                     // WALL
                     let sample_y =
                         ((y as f64) - (ceiling as f64)) / ((floor as f64) - (ceiling as f64));
+                    let color = if let Some(tile) = map.tiles.get(&current_tile)
+                    //== Some(tile)
+                    {
+                        tile.sprite.as_ref().unwrap().get_sample(sample_x, sample_y)
+                    } else {
+                        engine::Color::GREEN
+                    };
                     game.screen
-                        .draw(x as i32, y as i32, wall.get_sample(sample_x, sample_y))
+                        .draw(x as i32, y as i32, color)
                         .expect("Error while drawing to screen");
                 /*match wall.get_sample(sample_x, sample_y) {
                     engine::Color::WHITE => {
@@ -200,18 +180,9 @@ fn game_logic(game: &mut engine::Engine) -> Result<(), String> {
                 }
             }
         }
-        for ny in 0..=(map.h - 1) {
-            for nx in 0..=(map.w - 1) {
-                match map.get_2d(nx, ny) {
-                    Some('#') => {
-                        game.screen.fill_rect(
-                            (nx as i32 * MMF) + MMF,
-                            (ny as i32 * MMF) + MMF,
-                            MMF,
-                            MMF,
-                            engine::Color::RED,
-                        )?;
-                    }
+        for ny in 0..=(map.map.h - 1) {
+            for nx in 0..=(map.map.w - 1) {
+                match map.get_2d(nx as i64, ny as i64) {
                     Some('.') => {
                         game.screen.fill_rect(
                             (nx as i32 * MMF) + MMF,
@@ -227,7 +198,7 @@ fn game_logic(game: &mut engine::Engine) -> Result<(), String> {
                             (ny as i32 * MMF) + MMF,
                             MMF,
                             MMF,
-                            engine::Color::MAGENTA,
+                            engine::Color::RED,
                         )?;
                     }
                 }
@@ -248,7 +219,7 @@ fn game_logic(game: &mut engine::Engine) -> Result<(), String> {
 }
 
 fn main() -> Result<(), String> {
-    let fac = 2;
+    let fac = 4;
     let mut game: engine::Engine<'static> =
         engine::Engine::new("Pixel FPS", (120 * fac, 60 * fac, 10 / fac), &game_logic)
             .map_err(|err| err.to_string())?;

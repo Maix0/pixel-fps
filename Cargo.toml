@@ -8,3 +8,5 @@ edition = "2018"
 
 [dependencies]
 pixel_engine = {path="../pixel_engine"}
+serde = "1.0.101"
+ron="*"
